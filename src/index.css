@@ -45,8 +45,20 @@ body {
   background-attachment: fixed;
 }
 
+body.publish-mode {
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
 #root {
   min-height: 100dvh;
+}
+
+#root.publish-mode {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  min-height: 100svh;
 }
 
 code {

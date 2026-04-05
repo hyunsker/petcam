@@ -1,0 +1,60 @@
+:root {
+  --text: #5c5360;
+  --text-h: #3d3640;
+  --muted: #8b7f8a;
+  --bg-top: #fff5f7;
+  --bg-mid: #fff9f5;
+  --bg-bottom: #f0f7ff;
+  --surface: #ffffff;
+  --surface-soft: rgba(255, 255, 255, 0.85);
+  --border: rgba(255, 182, 193, 0.45);
+  --accent: #ff8fab;
+  --accent-deep: #ff6b8a;
+  --accent-shadow: rgba(255, 107, 138, 0.35);
+  --mint: #7dd3c0;
+  --shadow: 0 8px 32px rgba(255, 143, 171, 0.12);
+  --shadow-hover: 0 12px 40px rgba(255, 143, 171, 0.2);
+
+  font-family:
+    'Nunito',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  line-height: 1.55;
+  font-weight: 500;
+  color: var(--text);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: linear-gradient(
+    165deg,
+    var(--bg-top) 0%,
+    var(--bg-mid) 45%,
+    var(--bg-bottom) 100%
+  );
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+  padding: 0.12em 0.4em;
+  border-radius: 8px;
+  background: rgba(255, 182, 193, 0.2);
+  color: var(--text-h);
+  font-size: 0.88em;
+  font-weight: 600;
+}

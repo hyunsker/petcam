@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:api\" \"npm run dev:vite\"",
+    "dev:5174": "TOKEN_SERVER_PORT=8788 concurrently -k \"npm run dev:api\" \"npm run dev:vite -- --port 5174 --strictPort\"",
     "dev:vite": "vite",
     "dev:api": "node server/token-server.mjs",
     "build": "tsc -b && vite build",

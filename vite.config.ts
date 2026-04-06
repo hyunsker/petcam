@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Pet Cam',
-        short_name: 'PetCam',
+        name: '단이 HOUSE',
+        short_name: '단이HOUSE',
         description: '커플용 홈캠 (LiveKit)',
         theme_color: '#fff0f3',
         background_color: '#fff5f7',

@@ -10,7 +10,7 @@ const PET_CAM_CAMERA_MSG = 'pet-cam-camera' as const
 type CameraMode = 'front' | 'back' | 'ultra'
 
 /** LiveKit 방 이름 (고정) */
-const ROOM_NAME = '단이집'
+const ROOM_NAME = '단이 HOUSE'
 
 function getOrCreateIdentity(): string {
   try {
@@ -148,6 +148,24 @@ function clampZoom(n: number): number {
   return Math.min(3, Math.max(0.5, Math.round(n * 100) / 100))
 }
 
+const RECORD_MAX_MS = 60_000
+
+function pickVideoRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) {
+    return undefined
+  }
+  const candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    'video/mp4',
+  ]
+  for (const t of candidates) {
+    if (MediaRecorder.isTypeSupported(t)) return t
+  }
+  return undefined
+}
+
 function createRoomOptions(role: Role): RoomOptions {
   if (role === 'publish') {
     return {
@@ -176,7 +194,13 @@ function createRoomOptions(role: Role): RoomOptions {
   }
 }
 
+const APP_DISPLAY_NAME = '단이 HOUSE'
+
 export default function App() {
+  useEffect(() => {
+    document.title = APP_DISPLAY_NAME
+  }, [])
+
   const urlRole = useUrlRole()
   const [role, setRole] = useState<Role>(() => urlRole)
   const [displayName, setDisplayName] = useState('')
@@ -190,6 +214,12 @@ export default function App() {
   const roomRef = useRef<Room | null>(null)
   const remoteWrapRef = useRef<HTMLDivElement>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordChunksRef = useRef<BlobPart[]>([])
+  const skipRecordDownloadRef = useRef(false)
+  const recordStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const recordTickerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recordAutoStoppedRef = useRef(false)
   const videoInputsRef = useRef<MediaDeviceInfo[]>([])
   const publishStageRef = useRef<HTMLDivElement>(null)
   const localZoomWrapRef = useRef<HTMLDivElement>(null)
@@ -197,6 +227,8 @@ export default function App() {
 
   const [localZoom, setLocalZoom] = useState(1)
   const [remoteZoom, setRemoteZoom] = useState(1)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordRemainingSec, setRecordRemainingSec] = useState<number | null>(null)
   const remoteZoomRef = useRef(1)
   const localZoomRef = useRef(1)
   useEffect(() => {
@@ -233,6 +265,17 @@ export default function App() {
     }
   }, [releaseWakeLock])
 
+  const clearRecordingSchedulers = useCallback(() => {
+    if (recordStopTimerRef.current) {
+      clearTimeout(recordStopTimerRef.current)
+      recordStopTimerRef.current = null
+    }
+    if (recordTickerRef.current) {
+      clearInterval(recordTickerRef.current)
+      recordTickerRef.current = null
+    }
+  }, [])
+
   const enterPublishFullscreen = useCallback(() => {
     const el = publishStageRef.current
     if (!el) return
@@ -245,6 +288,20 @@ export default function App() {
   }, [])
 
   const disconnect = useCallback(async () => {
+    const mr = mediaRecorderRef.current
+    if (mr && mr.state !== 'inactive') {
+      skipRecordDownloadRef.current = true
+      clearRecordingSchedulers()
+      try {
+        mr.stop()
+      } catch {
+        /* noop */
+      }
+      mediaRecorderRef.current = null
+    }
+    setIsRecording(false)
+    setRecordRemainingSec(null)
+
     await releaseWakeLock()
     if (document.fullscreenElement && document.exitFullscreen) {
       try {
@@ -271,7 +328,7 @@ export default function App() {
     setSelectedCameraId('')
     setLocalZoom(1)
     setRemoteZoom(1)
-  }, [releaseWakeLock])
+  }, [releaseWakeLock, clearRecordingSchedulers])
 
   const refreshVideoInputs = useCallback(async () => {
     try {
@@ -286,6 +343,20 @@ export default function App() {
     async (deviceId: string) => {
       const room = roomRef.current
       if (!room || !deviceId) return
+      const mr = mediaRecorderRef.current
+      if (mr && mr.state !== 'inactive') {
+        skipRecordDownloadRef.current = true
+        clearRecordingSchedulers()
+        try {
+          mr.stop()
+        } catch {
+          /* noop */
+        }
+        mediaRecorderRef.current = null
+        setIsRecording(false)
+        setRecordRemainingSec(null)
+        setStatus('카메라를 바꿔 녹화를 멈췄어요')
+      }
       try {
         await room.switchActiveDevice('videoinput', deviceId)
         setSelectedCameraId(deviceId)
@@ -299,8 +370,134 @@ export default function App() {
         setError(e instanceof Error ? e.message : String(e))
       }
     },
-    [],
+    [clearRecordingSchedulers],
   )
+
+  const stopLocalRecording = useCallback(() => {
+    clearRecordingSchedulers()
+    const mr = mediaRecorderRef.current
+    if (mr && mr.state !== 'inactive') {
+      try {
+        mr.stop()
+      } catch {
+        /* noop */
+      }
+    }
+  }, [clearRecordingSchedulers])
+
+  const startLocalRecording = useCallback(() => {
+    const room = roomRef.current
+    if (!room) return
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      return
+    }
+    const pub = room.localParticipant.getTrackPublication(Track.Source.Camera)
+    const vt = pub?.track?.mediaStreamTrack
+    if (!vt || vt.readyState !== 'live') {
+      setError('카메라가 준비되지 않았어요.')
+      return
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      setError('이 브라우저는 녹화를 지원하지 않아요.')
+      return
+    }
+    const mimeType = pickVideoRecorderMimeType()
+    if (!mimeType) {
+      setError('이 기기에서 쓸 수 있는 동영상 녹화 형식이 없어요.')
+      return
+    }
+    recordChunksRef.current = []
+    skipRecordDownloadRef.current = false
+    let mr: MediaRecorder
+    try {
+      mr = new MediaRecorder(new MediaStream([vt]), { mimeType })
+    } catch {
+      setError('녹화를 시작할 수 없어요.')
+      return
+    }
+    mediaRecorderRef.current = mr
+    const startedAt = Date.now()
+    mr.ondataavailable = (e) => {
+      if (e.data.size > 0) recordChunksRef.current.push(e.data)
+    }
+    mr.onerror = () => {
+      clearRecordingSchedulers()
+      recordAutoStoppedRef.current = false
+      mediaRecorderRef.current = null
+      setIsRecording(false)
+      setRecordRemainingSec(null)
+      setError('녹화 중 오류가 났어요.')
+    }
+    mr.onstop = () => {
+      const wasAutoStop = recordAutoStoppedRef.current
+      clearRecordingSchedulers()
+      recordAutoStoppedRef.current = false
+      mediaRecorderRef.current = null
+      setIsRecording(false)
+      setRecordRemainingSec(null)
+      const skip = skipRecordDownloadRef.current
+      skipRecordDownloadRef.current = false
+      const chunks = recordChunksRef.current
+      recordChunksRef.current = []
+      if (skip) return
+      const blob = new Blob(chunks, { type: mimeType })
+      if (blob.size === 0) {
+        setStatus('녹화 데이터가 비어 있어요.')
+        return
+      }
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `pet-cam-${stamp}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setStatus(
+        wasAutoStop ? '1분이 지나 자동으로 저장했어요' : '녹화 파일을 저장했어요 (최대 1분)',
+      )
+    }
+    try {
+      mr.start(500)
+    } catch {
+      mediaRecorderRef.current = null
+      setError('녹화를 시작할 수 없어요.')
+      return
+    }
+    recordStopTimerRef.current = setTimeout(() => {
+      recordStopTimerRef.current = null
+      const active = mediaRecorderRef.current
+      if (active && active.state !== 'inactive') {
+        recordAutoStoppedRef.current = true
+        try {
+          active.stop()
+        } catch {
+          /* noop */
+        }
+      }
+    }, RECORD_MAX_MS)
+    setError(null)
+    setIsRecording(true)
+    setRecordRemainingSec(Math.ceil(RECORD_MAX_MS / 1000))
+    setStatus('녹화 중… (최대 1분)')
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((startedAt + RECORD_MAX_MS - Date.now()) / 1000))
+      setRecordRemainingSec(left > 0 ? left : 0)
+    }
+    tick()
+    recordTickerRef.current = window.setInterval(tick, 500)
+  }, [clearRecordingSchedulers])
+
+  const toggleLocalRecording = useCallback(() => {
+    const mr = mediaRecorderRef.current
+    if (mr && mr.state !== 'inactive') {
+      stopLocalRecording()
+    } else {
+      startLocalRecording()
+    }
+  }, [startLocalRecording, stopLocalRecording])
 
   const applyCameraMode = useCallback(
     (mode: CameraMode, opts?: { fromRemote?: boolean }) => {
@@ -647,7 +844,7 @@ export default function App() {
             <span className="brand-emoji" aria-hidden>
               🐾
             </span>
-            <h1>Pet Cam</h1>
+            <h1>{APP_DISPLAY_NAME}</h1>
           </div>
           <p className="tagline">둘만의 작은 홈캠</p>
         </header>
@@ -836,22 +1033,30 @@ export default function App() {
                     광각
                   </button>
                 </div>
-                <p className="camera-picker-hint">
-                  <strong>전면 · 후면 · 광각</strong>으로 빠르게 바꿀 수 있어요. 시청 중인
-                  폰에서도 같은 전환이 가능해요. 세부 렌즈는 위 목록에서 고르세요. 아이폰·아이패드는
-                  &quot;Ultra Wide&quot; 등으로 0.5x가 따로 보일 수 있어요 — 안 보이면 새로고침을 눌러
-                  보세요. 송출 중에는 화면이 꺼지지 않게 유지하려고 해요(기기·브라우저 설정에 따라 달라요).
-                  미리보기는 슬라이더·± 또는 두 손가락으로 확대할 수 있어요.
-                </p>
+                <div className="record-row">
+                  <button
+                    type="button"
+                    className={`btn btn-small ${isRecording ? 'record-active' : 'ghost'}`}
+                    onClick={() => void toggleLocalRecording()}
+                  >
+                    {isRecording ? '녹화 중지' : '녹화 시작'}
+                  </button>
+                  {isRecording && recordRemainingSec !== null ? (
+                    <span className="record-remaining" aria-live="polite">
+                      남은 {recordRemainingSec}초 · 최대 1분
+                    </span>
+                  ) : (
+                    <span className="record-hint">최대 1분까지 저장돼요</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {role === 'view' && (
             <>
-              <p className="viewer-hint">아래는 태블릿 송출 화면이에요</p>
               <div className="zoom-bar zoom-bar--viewer">
-                <span className="zoom-bar-label">영상 확대 (이 폰만 · 태블릿 화질과 별개)</span>
+                <span className="zoom-bar-label">확대</span>
                 <button
                   type="button"
                   className="btn ghost btn-small zoom-bar-btn"
@@ -925,11 +1130,6 @@ export default function App() {
                     광각
                   </button>
                 </div>
-                <p className="viewer-remote-hint">
-                  태블릿이 송출 중일 때만 동작해요. 누르면 태블릿에서 렌즈가 바뀌고, 광각은 Ultra
-                  Wide 등이 잡힐 때만 적용돼요. 위 영상은 두 손가락으로 확대하거나 슬라이더를 쓸 수
-                  있어요(이 폰 화면만 확대, 송출 화질과는 별개).
-                </p>
               </div>
               <p className="viewer-empty-hint">
                 영상이 없으면 태블릿에서 먼저 송출을 켜 주세요.

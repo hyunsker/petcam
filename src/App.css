@@ -469,14 +469,6 @@
   color: var(--text-h);
 }
 
-.camera-picker-hint {
-  margin: 0.5rem 0 0;
-  font-size: 0.75rem;
-  color: var(--muted);
-  line-height: 1.45;
-  font-weight: 600;
-}
-
 .facing-row {
   display: flex;
   flex-wrap: wrap;
@@ -487,6 +479,34 @@
 .facing-btn {
   flex: 1;
   justify-content: center;
+}
+
+.record-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.record-active {
+  background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  font-weight: 800;
+}
+
+.record-remaining {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #e11d48;
+  letter-spacing: -0.02em;
+}
+
+.record-hint {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .btn-small {
@@ -545,13 +565,6 @@
   backface-visibility: hidden;
 }
 
-.viewer-hint {
-  margin: 0 0 0.35rem;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #b87a9a;
-}
-
 .viewer-remote-camera {
   margin: 0 0 0.85rem;
   padding: 0.75rem 0.85rem;
@@ -574,14 +587,6 @@
 
 .viewer-facing-row {
   margin-top: 0.45rem;
-}
-
-.viewer-remote-hint {
-  margin: 0.55rem 0 0;
-  font-size: 0.72rem;
-  color: var(--muted);
-  line-height: 1.45;
-  font-weight: 600;
 }
 
 .viewer-empty-hint {

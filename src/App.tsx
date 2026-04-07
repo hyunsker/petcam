@@ -1,9 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RemoteParticipant, RoomOptions } from 'livekit-client'
+import type {
+  RemoteParticipant,
+  RemoteTrackPublication,
+  RoomOptions,
+} from 'livekit-client'
 import { Room, RoomEvent, Track, VideoPresets } from 'livekit-client'
 import './App.css'
 
 const STORAGE_ID = 'pet-cam-identity'
+const STORAGE_PUBLISH_SLOT = 'pet-cam-publish-slot'
+const STORAGE_FLIP_PREVIEW = 'pet-cam-flip-preview'
+
+const SLOT_LABELS = { '1': '1번 · 큰방', '2': '2번 · 거실' } as const
+
+function readInitialPublishSlot(): '1' | '2' {
+  const p = new URLSearchParams(window.location.search).get('slot')
+  if (p === '1' || p === '2') return p
+  try {
+    const s = localStorage.getItem(STORAGE_PUBLISH_SLOT)
+    if (s === '1' || s === '2') return s
+  } catch {
+    /* noop */
+  }
+  return '1'
+}
 
 /** 뷰어 → 송출: 원격 카메라 전환 (Data channel) */
 const PET_CAM_CAMERA_MSG = 'pet-cam-camera' as const
@@ -204,6 +224,7 @@ export default function App() {
   const urlRole = useUrlRole()
   const [role, setRole] = useState<Role>(() => urlRole)
   const [displayName, setDisplayName] = useState('')
+  const [publishSlot, setPublishSlot] = useState<'1' | '2'>(readInitialPublishSlot)
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -224,11 +245,22 @@ export default function App() {
   const publishStageRef = useRef<HTMLDivElement>(null)
   const localZoomWrapRef = useRef<HTMLDivElement>(null)
   const remoteZoomWrapRef = useRef<HTMLDivElement>(null)
+  const viewerImmersiveRef = useRef<HTMLDivElement>(null)
 
   const [localZoom, setLocalZoom] = useState(1)
   const [remoteZoom, setRemoteZoom] = useState(1)
   const [isRecording, setIsRecording] = useState(false)
   const [recordRemainingSec, setRecordRemainingSec] = useState<number | null>(null)
+  const [localPreviewFlipped, setLocalPreviewFlipped] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_FLIP_PREVIEW) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [remotePublishers, setRemotePublishers] = useState<
+    { identity: string; name: string }[]
+  >([])
   const remoteZoomRef = useRef(1)
   const localZoomRef = useRef(1)
   useEffect(() => {
@@ -239,6 +271,14 @@ export default function App() {
   }, [localZoom])
 
   const identity = useMemo(() => getOrCreateIdentity(), [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_PUBLISH_SLOT, publishSlot)
+    } catch {
+      /* noop */
+    }
+  }, [publishSlot])
 
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
 
@@ -287,7 +327,67 @@ export default function App() {
     if (req) void Promise.resolve(req()).catch(() => {})
   }, [])
 
+  const [viewerFullscreen, setViewerFullscreen] = useState(false)
+
+  const toggleViewerFullscreen = useCallback(async () => {
+    const root = viewerImmersiveRef.current
+    if (!root) return
+    const fsEl = document.fullscreenElement
+    if (fsEl === root) {
+      try {
+        await document.exitFullscreen()
+      } catch {
+        /* noop */
+      }
+      try {
+        screen.orientation?.unlock?.()
+      } catch {
+        /* noop */
+      }
+      return
+    }
+    const anyRoot = root as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void
+    }
+    const req =
+      root.requestFullscreen?.bind(root) ?? anyRoot.webkitRequestFullscreen?.bind(root)
+    if (!req) {
+      setStatus('이 브라우저는 전체 화면을 지원하지 않아요. 가로로 기울여 보세요.')
+      return
+    }
+    try {
+      await Promise.resolve(req())
+      const o = screen.orientation as ScreenOrientation & {
+        lock?: (orientation: string) => Promise<void>
+      }
+      if (typeof o?.lock === 'function') {
+        try {
+          await o.lock('landscape-primary')
+        } catch {
+          setStatus('전체 화면 켜짐 — 기기를 가로로 돌리면 더 넓어요')
+        }
+      } else {
+        setStatus('전체 화면 — 가로로 돌리면 더 넓게 보여요')
+      }
+    } catch {
+      setStatus('전체 화면을 켤 수 없어요')
+    }
+  }, [])
+
   const disconnect = useCallback(async () => {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      try {
+        await document.exitFullscreen()
+      } catch {
+        /* noop */
+      }
+    }
+    try {
+      screen.orientation?.unlock?.()
+    } catch {
+      /* noop */
+    }
+
     const mr = mediaRecorderRef.current
     if (mr && mr.state !== 'inactive') {
       skipRecordDownloadRef.current = true
@@ -522,20 +622,26 @@ export default function App() {
   const applyCameraModeRef = useRef(applyCameraMode)
   applyCameraModeRef.current = applyCameraMode
 
-  const sendViewerCameraCommand = useCallback(async (mode: CameraMode) => {
-    const room = roomRef.current
-    if (!room) return
-    try {
-      setError(null)
-      const payload = new TextEncoder().encode(
-        JSON.stringify({ type: PET_CAM_CAMERA_MSG, action: mode }),
-      )
-      await room.localParticipant.publishData(payload, { reliable: true })
-      setStatus('태블릿에 카메라 전환을 보냈어요')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }, [])
+  const sendViewerCameraCommand = useCallback(
+    async (mode: CameraMode, destinationIdentity: string) => {
+      const room = roomRef.current
+      if (!room || !destinationIdentity) return
+      try {
+        setError(null)
+        const payload = new TextEncoder().encode(
+          JSON.stringify({ type: PET_CAM_CAMERA_MSG, action: mode }),
+        )
+        await room.localParticipant.publishData(payload, {
+          reliable: true,
+          destinationIdentities: [destinationIdentity],
+        })
+        setStatus('선택한 송출에 카메라 전환을 보냈어요')
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [],
+  )
 
   const connect = useCallback(async () => {
     setError(null)
@@ -543,11 +649,20 @@ export default function App() {
     setStatus('토큰 요청 중…')
     let r: Room | null = null
     try {
+      const publishLabel =
+        role === 'publish' ? SLOT_LABELS[publishSlot] : undefined
+      const tokenName =
+        role === 'publish'
+          ? displayName.trim()
+            ? `${publishLabel} (${displayName.trim()})`
+            : publishLabel
+          : displayName.trim() || undefined
+
       const { token, url } = await fetchToken({
         room: ROOM_NAME,
         identity,
         role,
-        name: displayName.trim() || undefined,
+        name: tokenName,
       })
       r = new Room(createRoomOptions(role))
       roomRef.current = r
@@ -579,7 +694,7 @@ export default function App() {
     } finally {
       setConnecting(false)
     }
-  }, [displayName, identity, role])
+  }, [displayName, identity, publishSlot, role])
 
   /** 연결 후 DOM이 생긴 뒤 트랙 붙이기 (이전 버그: ref 없이 return 해서 화면이 안 바뀜) */
   useEffect(() => {
@@ -590,8 +705,13 @@ export default function App() {
     const remoteContainer = remoteWrapRef.current
     if (!remoteContainer) return
 
-    const attachRemote = (track: Track) => {
+    const attachRemoteTrack = (track: Track, participant: RemoteParticipant) => {
       if (track.kind !== Track.Kind.Video) return
+      const wrap = document.createElement('div')
+      wrap.className = 'remote-tile'
+      const labelEl = document.createElement('div')
+      labelEl.className = 'remote-tile-label'
+      labelEl.textContent = participant.name?.trim() || participant.identity
       const el = track.attach()
       if (el instanceof HTMLVideoElement) {
         el.playsInline = true
@@ -601,20 +721,37 @@ export default function App() {
         })
       }
       el.className = 'remote-video-el'
-      remoteContainer.appendChild(el)
+      wrap.appendChild(labelEl)
+      wrap.appendChild(el)
+      remoteContainer.appendChild(wrap)
     }
 
-    const onTrackSubscribed = (track: Track) => {
-      attachRemote(track)
+    const onTrackSubscribed = (
+      track: Track,
+      publication: RemoteTrackPublication,
+      participant: RemoteParticipant,
+    ) => {
+      if (publication.source !== Track.Source.Camera) return
+      attachRemoteTrack(track, participant)
     }
     const onTrackUnsubscribed = (track: Track) => {
-      track.detach()
+      const detached = track.detach()
+      detached.forEach((e) => {
+        const wrap = e.parentElement
+        if (wrap?.classList.contains('remote-tile')) {
+          wrap.remove()
+        }
+      })
     }
 
     r.remoteParticipants.forEach((p) => {
       p.trackPublications.forEach((pub) => {
-        if (pub.track && pub.kind === Track.Kind.Video) {
-          attachRemote(pub.track)
+        if (
+          pub.track &&
+          pub.kind === Track.Kind.Video &&
+          pub.source === Track.Source.Camera
+        ) {
+          attachRemoteTrack(pub.track, p)
         }
       })
     })
@@ -647,6 +784,49 @@ export default function App() {
       r.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed)
       r.off(RoomEvent.LocalTrackPublished, onLocalPublished)
       gridEl.innerHTML = ''
+    }
+  }, [connected, role])
+
+  /** 시청: 송출 기기별(1번·2번) 원격 카메라 버튼용 목록 */
+  useEffect(() => {
+    if (!connected || role !== 'view') {
+      setRemotePublishers([])
+      return
+    }
+    const room = roomRef.current
+    if (!room) return
+
+    const syncPublishers = () => {
+      const out: { identity: string; name: string }[] = []
+      room.remoteParticipants.forEach((p) => {
+        const hasCamera = [...p.trackPublications.values()].some(
+          (pub) =>
+            pub.kind === Track.Kind.Video &&
+            pub.source === Track.Source.Camera &&
+            pub.track,
+        )
+        if (hasCamera) {
+          out.push({
+            identity: p.identity,
+            name: p.name?.trim() || p.identity,
+          })
+        }
+      })
+      out.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+      setRemotePublishers(out)
+    }
+
+    syncPublishers()
+    room.on(RoomEvent.ParticipantConnected, syncPublishers)
+    room.on(RoomEvent.ParticipantDisconnected, syncPublishers)
+    room.on(RoomEvent.TrackSubscribed, syncPublishers)
+    room.on(RoomEvent.TrackUnsubscribed, syncPublishers)
+
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, syncPublishers)
+      room.off(RoomEvent.ParticipantDisconnected, syncPublishers)
+      room.off(RoomEvent.TrackSubscribed, syncPublishers)
+      room.off(RoomEvent.TrackUnsubscribed, syncPublishers)
     }
   }, [connected, role])
 
@@ -836,8 +1016,24 @@ export default function App() {
     }
   }, [connected, role])
 
+  useEffect(() => {
+    const onFs = () => {
+      const el = viewerImmersiveRef.current
+      const active = !!(el && document.fullscreenElement === el)
+      setViewerFullscreen(active)
+      document.body.classList.toggle('viewer-immersive-fs', active)
+    }
+    document.addEventListener('fullscreenchange', onFs)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs)
+      document.body.classList.remove('viewer-immersive-fs')
+    }
+  }, [])
+
   return (
-    <div className={`app ${connected && role === 'publish' ? 'app--publish' : ''}`}>
+    <div
+      className={`app ${connected && role === 'publish' ? 'app--publish' : ''} ${connected && role === 'view' ? 'app--view' : ''}`}
+    >
       {!(connected && role === 'publish') && (
         <header className="header">
           <div className="brand">
@@ -851,7 +1047,7 @@ export default function App() {
       )}
 
       {!connected ? (
-        <section className="form form-card">
+        <section className="form form-card form-card--landing">
           <fieldset className="role-field">
             <legend>역할</legend>
             <label>
@@ -873,6 +1069,40 @@ export default function App() {
               시청 (폰)
             </label>
           </fieldset>
+
+          {role === 'view' && (
+            <p className="landing-view-hint">
+              연결 후 <strong>전체 화면</strong>으로 켜면 가로로 넓게 보기 좋아요.
+            </p>
+          )}
+
+          {role === 'publish' && (
+            <fieldset className="role-field slot-field">
+              <legend>송출 위치</legend>
+              <p className="slot-field-hint">
+                큰방 태블릿은 1번, 거실 태블릿은 2번만 골라 연결하면 폰에서 구분돼요. 주소에{' '}
+                <code>?slot=1</code>·<code>?slot=2</code> 를 붙여 두면 다시 들어올 때도 유지돼요.
+              </p>
+              <label>
+                <input
+                  type="radio"
+                  name="publishSlot"
+                  checked={publishSlot === '1'}
+                  onChange={() => setPublishSlot('1')}
+                />{' '}
+                {SLOT_LABELS['1']}
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="publishSlot"
+                  checked={publishSlot === '2'}
+                  onChange={() => setPublishSlot('2')}
+                />{' '}
+                {SLOT_LABELS['2']}
+              </label>
+            </fieldset>
+          )}
 
           <label className="field">
             <span>표시 이름 (선택)</span>
@@ -936,7 +1166,9 @@ export default function App() {
                 >
                   전체 화면
                 </button>
-                <span className="badge">내 화면 (이렇게 보여요)</span>
+                <span className="badge">
+                  미리보기 · {SLOT_LABELS[publishSlot]}
+                </span>
                 <div ref={localZoomWrapRef} className="zoom-frame zoom-frame--local">
                   <div
                     className="zoom-inner zoom-inner--local"
@@ -947,6 +1179,9 @@ export default function App() {
                       className="local-video local-video--publish"
                       playsInline
                       muted
+                      style={
+                        localPreviewFlipped ? { transform: 'scaleX(-1)' } : undefined
+                      }
                     />
                   </div>
                 </div>
@@ -1032,6 +1267,25 @@ export default function App() {
                   >
                     광각
                   </button>
+                  <button
+                    type="button"
+                    className="btn ghost btn-small facing-btn"
+                    aria-pressed={localPreviewFlipped}
+                    title="아이패드·테슬라 등 기기마다 미리보기 좌우가 다를 때"
+                    onClick={() => {
+                      setLocalPreviewFlipped((v) => {
+                        const n = !v
+                        try {
+                          localStorage.setItem(STORAGE_FLIP_PREVIEW, n ? '1' : '0')
+                        } catch {
+                          /* noop */
+                        }
+                        return n
+                      })
+                    }}
+                  >
+                    미리보기 뒤집기
+                  </button>
                 </div>
                 <div className="record-row">
                   <button
@@ -1053,10 +1307,30 @@ export default function App() {
             </div>
           )}
 
-          {role === 'view' && (
-            <>
+          {role === 'view' ? (
+            <div ref={viewerImmersiveRef} className="viewer-immersive-wrap">
+              <div className="viewer-immersive-toolbar">
+                <button
+                  type="button"
+                  className="btn ghost btn-small viewer-fs-btn"
+                  onClick={() => void toggleViewerFullscreen()}
+                >
+                  {viewerFullscreen ? '전체 화면 끝' : '전체 화면 (가로 권장)'}
+                </button>
+              </div>
+              <div
+                ref={remoteZoomWrapRef}
+                className="zoom-frame zoom-frame--remote zoom-frame--remote-active"
+              >
+                <div
+                  className="zoom-inner zoom-inner--remote"
+                  style={{ transform: `scale(${remoteZoom})` }}
+                >
+                  <div className="remote-grid" ref={remoteWrapRef} />
+                </div>
+              </div>
               <div className="zoom-bar zoom-bar--viewer">
-                <span className="zoom-bar-label">확대</span>
+                <span className="zoom-bar-label">확대 (이 폰만)</span>
                 <button
                   type="button"
                   className="btn ghost btn-small zoom-bar-btn"
@@ -1085,54 +1359,56 @@ export default function App() {
                 </button>
                 <span className="zoom-bar-pct">{Math.round(remoteZoom * 100)}%</span>
               </div>
-            </>
-          )}
-
-          <div
-            ref={remoteZoomWrapRef}
-            className={`zoom-frame zoom-frame--remote ${role === 'view' ? 'zoom-frame--remote-active' : ''}`}
-          >
-            <div
-              className="zoom-inner zoom-inner--remote"
-              style={{ transform: `scale(${remoteZoom})` }}
-            >
-              <div className="remote-grid" ref={remoteWrapRef} />
             </div>
-          </div>
+          ) : (
+            <div ref={remoteZoomWrapRef} className="zoom-frame zoom-frame--remote">
+              <div
+                className="zoom-inner zoom-inner--remote"
+                style={{ transform: `scale(${remoteZoom})` }}
+              >
+                <div className="remote-grid" ref={remoteWrapRef} />
+              </div>
+            </div>
+          )}
 
           {role === 'view' && (
             <>
-              <div className="viewer-remote-camera viewer-remote-camera--below">
-                <span className="viewer-remote-label">태블릿 카메라 (원격)</span>
-                <div className="facing-row viewer-facing-row">
-                  <button
-                    type="button"
-                    className="btn ghost btn-small facing-btn"
-                    aria-label="태블릿 전면 카메라로 전환 요청"
-                    onClick={() => void sendViewerCameraCommand('front')}
-                  >
-                    전면
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost btn-small facing-btn"
-                    aria-label="태블릿 후면 카메라로 전환 요청"
-                    onClick={() => void sendViewerCameraCommand('back')}
-                  >
-                    후면
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost btn-small facing-btn"
-                    aria-label="태블릿 광각(울트라와이드) 카메라로 전환 요청"
-                    onClick={() => void sendViewerCameraCommand('ultra')}
-                  >
-                    광각
-                  </button>
+              {remotePublishers.map((pub) => (
+                <div
+                  key={pub.identity}
+                  className="viewer-remote-camera viewer-remote-camera--below"
+                >
+                  <span className="viewer-remote-label">{pub.name}</span>
+                  <div className="facing-row viewer-facing-row">
+                    <button
+                      type="button"
+                      className="btn ghost btn-small facing-btn"
+                      aria-label={`${pub.name} 전면`}
+                      onClick={() => void sendViewerCameraCommand('front', pub.identity)}
+                    >
+                      전면
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost btn-small facing-btn"
+                      aria-label={`${pub.name} 후면`}
+                      onClick={() => void sendViewerCameraCommand('back', pub.identity)}
+                    >
+                      후면
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost btn-small facing-btn"
+                      aria-label={`${pub.name} 광각`}
+                      onClick={() => void sendViewerCameraCommand('ultra', pub.identity)}
+                    >
+                      광각
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ))}
               <p className="viewer-empty-hint">
-                영상이 없으면 태블릿에서 먼저 송출을 켜 주세요.
+                영상이 없으면 1번·2번 송출 태블릿에서 연결을 켜 주세요.
               </p>
             </>
           )}

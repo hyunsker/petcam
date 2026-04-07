@@ -16,9 +16,26 @@
   min-height: 0;
 }
 
+.app--view {
+  max-width: min(100%, 520px);
+  padding-bottom: 1.5rem;
+}
+
 .header {
   text-align: center;
   margin-bottom: 1.5rem;
+}
+
+.app:has(.form-card--landing) .header {
+  margin-bottom: 1rem;
+}
+
+.app:has(.form-card--landing) .header h1 {
+  font-size: 1.55rem;
+}
+
+.app:has(.form-card--landing) .brand-emoji {
+  font-size: 1.65rem;
 }
 
 .brand {
@@ -66,6 +83,23 @@
   padding: 1.35rem 1.25rem 1.5rem;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
+}
+
+.form-card--landing {
+  padding: 1rem 1rem 1.2rem;
+}
+
+.landing-view-hint {
+  margin: -0.25rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.landing-view-hint strong {
+  color: var(--text-h);
+  font-weight: 800;
 }
 
 .form {
@@ -308,6 +342,99 @@
   margin-bottom: 0.35rem;
 }
 
+.app--view .zoom-frame--remote-active {
+  min-height: 0;
+}
+
+.viewer-immersive-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.viewer-immersive-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.viewer-fs-btn {
+  font-weight: 800;
+}
+
+.viewer-immersive-wrap:fullscreen,
+.viewer-immersive-wrap:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  background: #000;
+  box-sizing: border-box;
+}
+
+.viewer-immersive-wrap:fullscreen .viewer-immersive-toolbar,
+.viewer-immersive-wrap:-webkit-full-screen .viewer-immersive-toolbar {
+  flex-shrink: 0;
+  padding: 0.35rem 0.5rem 0;
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-frame--remote-active,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-frame--remote-active {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  border-radius: 12px;
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-inner--remote,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-inner--remote {
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-inner--remote .remote-grid,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-inner--remote .remote-grid {
+  min-height: 100%;
+  width: 100%;
+  align-content: center;
+  justify-items: center;
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-bar--viewer,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-bar--viewer {
+  flex-shrink: 0;
+  margin-top: 0.4rem;
+  margin-bottom: 0;
+  padding: 0.5rem 0.6rem;
+  background: rgba(28, 26, 34, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-bar--viewer .zoom-bar-label,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-bar--viewer .zoom-bar-label {
+  color: #ece8f0;
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-bar--viewer .zoom-bar-pct,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-bar--viewer .zoom-bar-pct {
+  color: #c9b8d4;
+}
+
+.viewer-immersive-wrap:fullscreen .zoom-bar--viewer .btn.ghost,
+.viewer-immersive-wrap:-webkit-full-screen .zoom-bar--viewer .btn.ghost {
+  color: #f0eaf5;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .zoom-inner--remote {
   width: 100%;
   min-height: inherit;
@@ -317,6 +444,14 @@
 
 .zoom-inner--remote .remote-grid {
   min-height: min(56vh, 520px);
+}
+
+.app--view .zoom-inner--remote {
+  min-height: auto;
+}
+
+.app--view .zoom-inner--remote .remote-grid {
+  min-height: auto;
 }
 
 .zoom-bar {
@@ -481,6 +616,11 @@
   justify-content: center;
 }
 
+.facing-btn[aria-pressed='true'] {
+  background: rgba(255, 182, 193, 0.35);
+  border-color: rgba(255, 143, 171, 0.55);
+}
+
 .record-row {
   display: flex;
   flex-wrap: wrap;
@@ -552,6 +692,29 @@
   gap: 0.85rem;
 }
 
+.remote-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.remote-tile-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text-h);
+  letter-spacing: -0.02em;
+  padding: 0 0.15rem;
+}
+
+.slot-field-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .remote-video-el {
   width: 100%;
   border-radius: 20px;
@@ -563,6 +726,21 @@
   box-shadow: var(--shadow);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+.app--view .remote-video-el {
+  aspect-ratio: unset;
+  height: auto;
+  max-height: min(72vh, 560px);
+}
+
+.viewer-immersive-wrap:fullscreen .remote-video-el,
+.viewer-immersive-wrap:-webkit-full-screen .remote-video-el {
+  aspect-ratio: unset;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
 }
 
 .viewer-remote-camera {

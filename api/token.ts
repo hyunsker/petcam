@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { AccessToken } from 'livekit-server-sdk'
+import { AccessToken, TrackSource } from 'livekit-server-sdk'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -49,13 +49,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ttl: '12h',
   })
 
-  at.addGrant({
-    roomJoin: true,
-    room,
-    canSubscribe: true,
-    canPublish: role === 'publish',
-    canPublishData: true,
-  })
+  if (role === 'publish') {
+    at.addGrant({
+      roomJoin: true,
+      room,
+      canSubscribe: true,
+      canPublish: true,
+      canPublishData: true,
+    })
+  } else {
+    at.addGrant({
+      roomJoin: true,
+      room,
+      canSubscribe: true,
+      canPublish: true,
+      canPublishSources: [TrackSource.MICROPHONE],
+      canPublishData: true,
+    })
+  }
 
   const token = await at.toJwt()
   res.status(200).json({ token, url: wsUrl })

@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import http from 'node:http'
-import { AccessToken } from 'livekit-server-sdk'
+import { AccessToken, TrackSource } from 'livekit-server-sdk'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(__dirname, '..')
@@ -89,13 +89,24 @@ const server = http.createServer(async (req, res) => {
     ttl: '12h',
   })
 
-  at.addGrant({
-    roomJoin: true,
-    room,
-    canSubscribe: true,
-    canPublish: role === 'publish',
-    canPublishData: true,
-  })
+  if (role === 'publish') {
+    at.addGrant({
+      roomJoin: true,
+      room,
+      canSubscribe: true,
+      canPublish: true,
+      canPublishData: true,
+    })
+  } else {
+    at.addGrant({
+      roomJoin: true,
+      room,
+      canSubscribe: true,
+      canPublish: true,
+      canPublishSources: [TrackSource.MICROPHONE],
+      canPublishData: true,
+    })
+  }
 
   const token = await at.toJwt()
   sendJson(res, 200, { token, url: wsUrl })

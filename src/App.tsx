@@ -9,9 +9,13 @@ import './App.css'
 
 const STORAGE_ID = 'pet-cam-identity'
 const STORAGE_PUBLISH_SLOT = 'pet-cam-publish-slot'
-const STORAGE_FLIP_PREVIEW = 'pet-cam-flip-preview'
 
 const SLOT_LABELS = { '1': '1번 · 큰방', '2': '2번 · 거실' } as const
+
+/** 송출 표시 이름에 포함(2번·거실). 시청 화면만 좌우 반전 — 아이패드 거실만 자연스럽게 */
+function isLivingRoomRemoteLabel(name: string): boolean {
+  return name.includes('거실')
+}
 
 function readInitialPublishSlot(): '1' | '2' {
   const p = new URLSearchParams(window.location.search).get('slot')
@@ -234,6 +238,7 @@ export default function App() {
 
   const roomRef = useRef<Room | null>(null)
   const remoteWrapRef = useRef<HTMLDivElement>(null)
+  const remoteAudioSinkRef = useRef<HTMLDivElement>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordChunksRef = useRef<BlobPart[]>([])
@@ -251,13 +256,8 @@ export default function App() {
   const [remoteZoom, setRemoteZoom] = useState(1)
   const [isRecording, setIsRecording] = useState(false)
   const [recordRemainingSec, setRecordRemainingSec] = useState<number | null>(null)
-  const [localPreviewFlipped, setLocalPreviewFlipped] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_FLIP_PREVIEW) === '1'
-    } catch {
-      return false
-    }
-  })
+  const [publishMicEnabled, setPublishMicEnabled] = useState(true)
+  const [viewerMicEnabled, setViewerMicEnabled] = useState(false)
   const [remotePublishers, setRemotePublishers] = useState<
     { identity: string; name: string }[]
   >([])
@@ -418,9 +418,12 @@ export default function App() {
     if (remoteWrapRef.current) {
       remoteWrapRef.current.innerHTML = ''
     }
+    remoteAudioSinkRef.current?.replaceChildren()
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null
     }
+    setPublishMicEnabled(true)
+    setViewerMicEnabled(false)
     setConnected(false)
     setStatus('')
     setConnecting(false)
@@ -643,6 +646,42 @@ export default function App() {
     [],
   )
 
+  const togglePublishMic = useCallback(async () => {
+    const room = roomRef.current
+    if (!room) return
+    const next = !publishMicEnabled
+    try {
+      await room.localParticipant.setMicrophoneEnabled(next)
+      setPublishMicEnabled(next)
+      setError(null)
+      setStatus(next ? '마이크 켜짐' : '마이크 꺼짐')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [publishMicEnabled])
+
+  const toggleViewerMic = useCallback(async () => {
+    const room = roomRef.current
+    if (!room) return
+    const next = !viewerMicEnabled
+    try {
+      await room.localParticipant.setMicrophoneEnabled(next)
+      if (next) void room.startAudio()
+      setViewerMicEnabled(next)
+      setError(null)
+      setStatus(
+        next ? '폰 마이크 켜짐 — 송출 태블릿에서 들려요' : '폰 마이크 꺼짐',
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [viewerMicEnabled])
+
+  const allowRemotePlayback = useCallback(() => {
+    void roomRef.current?.startAudio()
+    setStatus('소리 재생을 허용했어요')
+  }, [])
+
   const connect = useCallback(async () => {
     setError(null)
     setConnecting(true)
@@ -676,12 +715,18 @@ export default function App() {
       await r.connect(url, token)
 
       if (role === 'publish') {
-        await r.localParticipant.setMicrophoneEnabled(false)
         await r.localParticipant.setCameraEnabled(true)
-        setStatus('카메라 준비됨')
+        await r.localParticipant.setMicrophoneEnabled(true)
+        setPublishMicEnabled(true)
+        setStatus('카메라·마이크 준비됨')
       } else {
+        await r.localParticipant.setCameraEnabled(false)
+        await r.localParticipant.setMicrophoneEnabled(false)
+        setViewerMicEnabled(false)
         setStatus('시청 준비됨')
       }
+
+      void r.startAudio().catch(() => {})
 
       /** ref(비디오 영역)는 `connected === true` 일 때만 DOM에 있음 → 먼저 화면 전환 */
       setConnected(true)
@@ -703,6 +748,7 @@ export default function App() {
     if (!r) return
 
     const remoteContainer = remoteWrapRef.current
+    const audioSink = remoteAudioSinkRef.current
     if (!remoteContainer) return
 
     const attachRemoteTrack = (track: Track, participant: RemoteParticipant) => {
@@ -711,7 +757,8 @@ export default function App() {
       wrap.className = 'remote-tile'
       const labelEl = document.createElement('div')
       labelEl.className = 'remote-tile-label'
-      labelEl.textContent = participant.name?.trim() || participant.identity
+      const pname = participant.name?.trim() || participant.identity
+      labelEl.textContent = pname
       const el = track.attach()
       if (el instanceof HTMLVideoElement) {
         el.playsInline = true
@@ -721,9 +768,23 @@ export default function App() {
         })
       }
       el.className = 'remote-video-el'
+      if (isLivingRoomRemoteLabel(pname)) {
+        el.classList.add('remote-video-el--mirror')
+      }
       wrap.appendChild(labelEl)
       wrap.appendChild(el)
       remoteContainer.appendChild(wrap)
+    }
+
+    const attachRemoteAudio = (track: Track) => {
+      if (track.kind !== Track.Kind.Audio) return
+      const sink = audioSink ?? document.body
+      const el = track.attach()
+      el.autoplay = true
+      sink.appendChild(el)
+      void el.play().catch(() => {
+        /* 브라우저 자동재생 정책 — 「소리 재생」 버튼으로 startAudio */
+      })
     }
 
     const onTrackSubscribed = (
@@ -731,8 +792,16 @@ export default function App() {
       publication: RemoteTrackPublication,
       participant: RemoteParticipant,
     ) => {
-      if (publication.source !== Track.Source.Camera) return
-      attachRemoteTrack(track, participant)
+      if (publication.source === Track.Source.Camera && track.kind === Track.Kind.Video) {
+        attachRemoteTrack(track, participant)
+        return
+      }
+      if (
+        publication.source === Track.Source.Microphone &&
+        track.kind === Track.Kind.Audio
+      ) {
+        attachRemoteAudio(track)
+      }
     }
     const onTrackUnsubscribed = (track: Track) => {
       const detached = track.detach()
@@ -740,18 +809,20 @@ export default function App() {
         const wrap = e.parentElement
         if (wrap?.classList.contains('remote-tile')) {
           wrap.remove()
+        } else {
+          e.remove()
         }
       })
     }
 
     r.remoteParticipants.forEach((p) => {
       p.trackPublications.forEach((pub) => {
-        if (
-          pub.track &&
-          pub.kind === Track.Kind.Video &&
-          pub.source === Track.Source.Camera
-        ) {
+        if (!pub.track) return
+        if (pub.kind === Track.Kind.Video && pub.source === Track.Source.Camera) {
           attachRemoteTrack(pub.track, p)
+        }
+        if (pub.kind === Track.Kind.Audio && pub.source === Track.Source.Microphone) {
+          attachRemoteAudio(pub.track)
         }
       })
     })
@@ -772,7 +843,7 @@ export default function App() {
     if (role === 'publish') {
       r.on(RoomEvent.LocalTrackPublished, onLocalPublished)
       onLocalPublished()
-      setStatus('카메라 송출 중')
+      setStatus('카메라·마이크 송출 중')
     } else {
       setStatus('시청 중 — 송출 기기가 켜지면 여기에 보여요')
     }
@@ -784,6 +855,7 @@ export default function App() {
       r.off(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed)
       r.off(RoomEvent.LocalTrackPublished, onLocalPublished)
       gridEl.innerHTML = ''
+      audioSink?.replaceChildren()
     }
   }, [connected, role])
 
@@ -1145,6 +1217,7 @@ export default function App() {
         <section
           className={`session ${connected && role === 'publish' ? 'session--publish' : ''}`}
         >
+          <div ref={remoteAudioSinkRef} className="remote-audio-sink" aria-hidden />
           <div className="session-card">
             <div className="session-bar">
               <span className="pill">{role === 'publish' ? '송출 중' : '시청 중'}</span>
@@ -1179,9 +1252,6 @@ export default function App() {
                       className="local-video local-video--publish"
                       playsInline
                       muted
-                      style={
-                        localPreviewFlipped ? { transform: 'scaleX(-1)' } : undefined
-                      }
                     />
                   </div>
                 </div>
@@ -1267,25 +1337,18 @@ export default function App() {
                   >
                     광각
                   </button>
+                </div>
+                <div className="mic-row">
                   <button
                     type="button"
-                    className="btn ghost btn-small facing-btn"
-                    aria-pressed={localPreviewFlipped}
-                    title="아이패드·테슬라 등 기기마다 미리보기 좌우가 다를 때"
-                    onClick={() => {
-                      setLocalPreviewFlipped((v) => {
-                        const n = !v
-                        try {
-                          localStorage.setItem(STORAGE_FLIP_PREVIEW, n ? '1' : '0')
-                        } catch {
-                          /* noop */
-                        }
-                        return n
-                      })
-                    }}
+                    className={`btn btn-small ${publishMicEnabled ? 'ghost' : 'record-active'}`}
+                    onClick={() => void togglePublishMic()}
                   >
-                    미리보기 뒤집기
+                    {publishMicEnabled ? '마이크 끄기' : '마이크 켜기'}
                   </button>
+                  <span className="mic-row-hint">
+                    켜 두면 폰·다른 태블릿에서 소리로 들려요. 거실 화면 좌우는 시청 쪽에서만 맞춰요.
+                  </span>
                 </div>
                 <div className="record-row">
                   <button
@@ -1316,6 +1379,20 @@ export default function App() {
                   onClick={() => void toggleViewerFullscreen()}
                 >
                   {viewerFullscreen ? '전체 화면 끝' : '전체 화면 (가로 권장)'}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn-small"
+                  onClick={() => void allowRemotePlayback()}
+                >
+                  소리 재생
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-small ${viewerMicEnabled ? 'record-active' : 'ghost'}`}
+                  onClick={() => void toggleViewerMic()}
+                >
+                  {viewerMicEnabled ? '폰 마이크 끄기' : '폰 마이크 켜기'}
                 </button>
               </div>
               <div

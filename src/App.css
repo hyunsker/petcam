@@ -354,6 +354,7 @@
 
 .viewer-immersive-toolbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
   gap: 0.35rem;
@@ -621,6 +622,23 @@
   border-color: rgba(255, 143, 171, 0.55);
 }
 
+.mic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.mic-row-hint {
+  flex: 1 1 200px;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .record-row {
   display: flex;
   flex-wrap: wrap;
@@ -726,6 +744,11 @@
   box-shadow: var(--shadow);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+.remote-video-el--mirror {
+  transform: scaleX(-1);
+  transform-origin: center center;
 }
 
 .app--view .remote-video-el {

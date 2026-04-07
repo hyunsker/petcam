@@ -1,7 +1,7 @@
 .app {
   max-width: 420px;
   margin: 0 auto;
-  padding: 1.25rem 1rem 2.5rem;
+  padding: calc(1.1rem + env(safe-area-inset-top, 0)) 1rem 2.5rem;
   text-align: left;
 }
 
@@ -24,6 +24,11 @@
 .header {
   text-align: center;
   margin-bottom: 1.5rem;
+}
+
+/* iPhone 상단 노치/다이나믹아일랜드와 헤더 겹침 완화 */
+.app:not(.app--publish):not(.app--view) .header {
+  margin-top: 0.35rem;
 }
 
 .app:has(.form-card--landing) .header {
@@ -146,6 +151,24 @@
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 4px rgba(255, 143, 171, 0.2);
+}
+
+.viewer-name-presets {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: -0.25rem;
+}
+
+.viewer-name-presets-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.viewer-name-presets-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #b44f78;
 }
 
 .role-field {
@@ -329,6 +352,12 @@
   backface-visibility: hidden;
 }
 
+/* 송출 2번(거실) 미리보기도 좌우 반전 */
+.local-video--mirror {
+  transform: scaleX(-1);
+  transform-origin: center center;
+}
+
 .zoom-frame--remote {
   display: none;
 }
@@ -344,6 +373,8 @@
 
 .app--view .zoom-frame--remote-active {
   min-height: 0;
+  width: 100%;
+  background: #000;
 }
 
 .viewer-immersive-wrap {
@@ -359,6 +390,71 @@
   align-items: center;
   gap: 0.35rem;
   margin-bottom: 0.45rem;
+}
+
+.tile-pseudo-fs-overlay {
+  display: none;
+}
+
+.tile-pseudo-fs-overlay.tile-pseudo-fs--active {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  box-sizing: border-box;
+}
+
+.tile-pseudo-fs-bar {
+  position: absolute;
+  z-index: 4;
+  top: calc(0.5rem + env(safe-area-inset-top, 0));
+  left: calc(0.5rem + env(safe-area-inset-left, 0));
+  right: calc(0.5rem + env(safe-area-inset-right, 0));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.tile-pseudo-fs-title {
+  min-width: 0;
+  color: #f3ebf7;
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-pseudo-fs-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.tile-pseudo-fs-stage .remote-video-el {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 .viewer-fs-btn {
@@ -388,7 +484,7 @@
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 0;
-  border-radius: 12px;
+  border-radius: 0;
 }
 
 .viewer-immersive-wrap:fullscreen .zoom-inner--remote,
@@ -396,27 +492,28 @@
   min-height: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 
 .viewer-immersive-wrap:fullscreen .zoom-inner--remote .remote-grid,
 .viewer-immersive-wrap:-webkit-full-screen .zoom-inner--remote .remote-grid {
   min-height: 100%;
   width: 100%;
-  align-content: center;
-  justify-items: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 0.75rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.35rem;
 }
 
 .viewer-immersive-wrap:fullscreen .zoom-bar--viewer,
 .viewer-immersive-wrap:-webkit-full-screen .zoom-bar--viewer {
-  flex-shrink: 0;
-  margin-top: 0.4rem;
-  margin-bottom: 0;
-  padding: 0.5rem 0.6rem;
-  background: rgba(28, 26, 34, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+  display: none;
 }
 
 .viewer-immersive-wrap:fullscreen .zoom-bar--viewer .zoom-bar-label,
@@ -436,11 +533,22 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.zoom-inner-pan--remote {
+  width: 100%;
+  min-height: inherit;
+  display: block;
+  will-change: transform;
+}
+
 .zoom-inner--remote {
   width: 100%;
   min-height: inherit;
   transform-origin: center center;
   will-change: transform;
+}
+
+.zoom-frame--viewer-gestures {
+  touch-action: none;
 }
 
 .zoom-inner--remote .remote-grid {
@@ -543,11 +651,80 @@
   box-shadow: var(--shadow);
 }
 
+.saved-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(12, 10, 18, 0.76);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.saved-preview-card {
+  width: min(96vw, 560px);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 182, 193, 0.34);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow);
+  padding: 0.75rem;
+}
+
+.saved-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.saved-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.saved-preview-hint {
+  margin: 0.45rem 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.saved-preview-body {
+  width: 100%;
+  border-radius: 14px;
+  background: #120f19;
+  padding: 0.25rem;
+}
+
+.saved-preview-image,
+.saved-preview-video {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 12px;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
 .session-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
+}
+
+.co-viewer-notice {
+  margin: 0.6rem 0 0;
+  padding: 0.42rem 0.65rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #b44f78;
+  border: 1px solid rgba(255, 143, 171, 0.28);
+  background: rgba(255, 240, 244, 0.72);
 }
 
 .pill {
@@ -570,7 +747,78 @@
 .status {
   font-size: 0.82rem;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(183, 137, 168, 0.28);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.status-dot-chip,
+.viewer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.56rem;
+  border-radius: 999px;
+  border: 1px solid rgba(107, 114, 128, 0.3);
+  background: rgba(243, 244, 246, 0.75);
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.status-dot-chip .dot,
+.viewer-tab .dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+
+.status-dot-chip.is-on,
+.viewer-tab.is-on {
+  color: #166534;
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(220, 252, 231, 0.72);
+}
+
+.status-dot-chip.is-on .dot,
+.viewer-tab.is-on .dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.26), 0 0 8px rgba(34, 197, 94, 0.42);
+}
+
+.viewer-presence-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.status--live {
+  color: #1b7f5c;
+  border-color: rgba(34, 197, 94, 0.32);
+  background: rgba(220, 252, 231, 0.55);
+}
+
+.status--connecting,
+.status--reconnecting {
+  color: #b44f78;
+  border-color: rgba(255, 143, 171, 0.35);
+  background: rgba(255, 240, 244, 0.82);
+}
+
+.status--error {
+  color: #be123c;
+  border-color: rgba(244, 63, 94, 0.3);
+  background: rgba(255, 228, 230, 0.65);
+}
+
+.status--offline {
+  color: #6b7280;
+  border-color: rgba(107, 114, 128, 0.28);
+  background: rgba(243, 244, 246, 0.7);
 }
 
 .camera-picker {
@@ -654,6 +902,13 @@
   font-weight: 800;
 }
 
+.btn-toggle-active {
+  background: linear-gradient(135deg, #ff8fab 0%, #ff6b8a 100%) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  font-weight: 800;
+}
+
 .record-remaining {
   font-size: 0.8rem;
   font-weight: 800;
@@ -710,6 +965,116 @@
   gap: 0.85rem;
 }
 
+/* 시청: 1번·2번을 한 검은 박스 옆으로 2분할하지 않고, 세로로 독립 카드 */
+.app--view .remote-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  align-items: stretch;
+  height: 100%;
+}
+
+.app--view .remote-tile {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.65rem 0.7rem;
+  border-radius: 18px;
+  background: #252030;
+  border: 0;
+  box-shadow: 0 8px 28px rgba(26, 21, 32, 0.35);
+}
+
+.app--view .remote-tile-label {
+  color: #f3ebf7;
+}
+
+.remote-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.remote-tile-stage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  aspect-ratio: var(--video-ratio, 16 / 9);
+  background: #000;
+  overflow: hidden;
+}
+
+.remote-tile-fs-btn {
+  position: absolute;
+  z-index: 3;
+  top: 0.45rem;
+  right: 0.45rem;
+  padding: 0.35rem 0.55rem !important;
+  font-size: 0.72rem !important;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.55) !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+.remote-tile-cam-row {
+  position: static;
+  z-index: 1;
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.remote-tile-cam-btn {
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: 0.26rem 0.42rem !important;
+  font-size: 0.68rem !important;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #f6eefb !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+.remote-tile-stage:fullscreen,
+.remote-tile-stage:-webkit-full-screen {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+.remote-tile-stage:fullscreen .remote-video-el,
+.remote-tile-stage:-webkit-full-screen .remote-video-el {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: none;
+  box-shadow: none;
+}
+
+/* 전체화면에서도 거실(미러) 유지 — 일반 규칙보다 구체적으로 transform 재선언 */
+.remote-tile-stage:fullscreen .remote-video-el.remote-video-el--mirror,
+.remote-tile-stage:-webkit-full-screen .remote-video-el.remote-video-el--mirror {
+  transform: scaleX(-1);
+  transform-origin: center center;
+}
+
+.remote-tile-stage:fullscreen .remote-tile-fs-btn,
+.remote-tile-stage:-webkit-full-screen .remote-tile-fs-btn {
+  top: calc(0.5rem + env(safe-area-inset-top, 0));
+  right: calc(0.5rem + env(safe-area-inset-right, 0));
+}
+
 .remote-tile {
   display: flex;
   flex-direction: column;
@@ -718,11 +1083,23 @@
 }
 
 .remote-tile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
   font-size: 0.78rem;
   font-weight: 800;
   color: var(--text-h);
   letter-spacing: -0.02em;
   padding: 0 0.15rem;
+}
+
+.remote-live-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.26), 0 0 7px rgba(34, 197, 94, 0.48);
+  flex: 0 0 auto;
 }
 
 .slot-field-hint {
@@ -753,17 +1130,118 @@
 
 .app--view .remote-video-el {
   aspect-ratio: unset;
-  height: auto;
-  max-height: min(72vh, 560px);
+  height: 100%;
+  width: 100%;
+  max-height: none;
+  border-radius: 14px;
+  border-width: 2px;
+  object-fit: contain;
+}
+
+/* 세로 모드에서도 가로(16:9) 프레임을 기준으로 보이게 정렬 */
+@media (orientation: portrait) {
+  .app--view .zoom-frame--remote-active {
+    margin-inline: auto;
+    max-width: 100%;
+    border-radius: 14px;
+    min-height: 0;
+  }
+
+  .app--view .remote-video-el {
+    object-fit: contain;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .app--view .remote-tile {
+    padding: 0.36rem 0.5rem;
+  }
+
+  /* 라벨+영상 프레임을 한 덩어리처럼 맞춰서 위/아래 시각 차이를 줄임 */
+  .app--view .remote-tile-label {
+    margin: 0;
+    padding: 0.34rem 0.56rem;
+    border: 0;
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    background: #1f1a2a;
+    color: #f6edf9;
+    line-height: 1.2;
+  }
+
+  .app--view .remote-tile-head {
+    padding-right: 0.2rem;
+  }
+
+  .app--view .remote-tile-stage {
+    border: 0;
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+    background: #000;
+    height: auto;
+    min-height: 0;
+  }
+
+  .viewer-immersive-toolbar {
+    margin-bottom: 0.3rem;
+  }
 }
 
 .viewer-immersive-wrap:fullscreen .remote-video-el,
 .viewer-immersive-wrap:-webkit-full-screen .remote-video-el {
   aspect-ratio: unset;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
+  max-width: 100vw;
+  width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* NOTE:
+ * 세로 비율 원본을 가로 화면에 "꽉 채움(cover)" 하면 잘림이 필수라,
+ * 전체화면은 기본적으로 비율 보존(contain)으로 둔다.
+ */
+
+.viewer-immersive-wrap:fullscreen .remote-video-el.remote-video-el--mirror,
+.viewer-immersive-wrap:-webkit-full-screen .remote-video-el.remote-video-el--mirror {
+  transform: scaleX(-1);
+  transform-origin: center center;
+}
+
+.viewer-immersive-wrap:fullscreen .remote-grid,
+.viewer-immersive-wrap:-webkit-full-screen .remote-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+
+.viewer-immersive-wrap:fullscreen .remote-tile,
+.viewer-immersive-wrap:-webkit-full-screen .remote-tile {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.viewer-immersive-wrap:fullscreen .remote-tile-label,
+.viewer-immersive-wrap:-webkit-full-screen .remote-tile-label {
+  display: none;
+}
+
+/* 비디오 요소 자체가 풀스크린(iOS webkitEnterFullscreen 등)일 때도 미러 유지 */
+.remote-video-el.remote-video-el--mirror:fullscreen,
+.remote-video-el.remote-video-el--mirror:-webkit-full-screen {
+  transform: scaleX(-1);
+  transform-origin: center center;
 }
 
 .viewer-remote-camera {
